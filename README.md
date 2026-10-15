@@ -30,7 +30,7 @@ The LLM decides **what** should happen. Open-RMF handles **how**: path planning,
 ## Roadmap
 
 - [x] **Phase 1: Simulation environment.** Open-RMF office demo running; patrol and delivery tasks dispatched and completed by two robots in parallel.
-- [ ] **Phase 2: RMF API bridge.** rmf-web API server and a Python client for fleet state and task dispatch.
+- [x] **Phase 2: RMF API bridge.** rmf-web API server in Docker and a Python client (`mcp_server/rmf_client.py`) that reads fleet state and dispatches, tracks and cancels tasks over HTTP.
 - [ ] **Phase 3: MCP server.** Fleet tools exposed over MCP.
 - [ ] **Phase 4: LLM agent.** Observe, act and verify loop, with tool-call logging.
 - [ ] **Phase 5: Factory scenario.** Custom shop-floor map and an RCGA material-flow planner as an MCP tool.
@@ -38,17 +38,36 @@ The LLM decides **what** should happen. Open-RMF handles **how**: path planning,
 
 ## Tech stack
 
-Ubuntu 24.04 · ROS 2 Jazzy · Gazebo Harmonic · Open-RMF · Python · MCP
+Ubuntu 24.04 · ROS 2 Jazzy · Gazebo Harmonic · Open-RMF · rmf-web API server (Docker) · Python (httpx) · MCP
 
-## Setup
+## Quick start
 
-See [docs/setup.md](docs/setup.md) for the full environment setup and the Phase 1 verification steps.
+Requires the environment in [docs/setup.md](docs/setup.md). Start each in its own terminal, in this order:
 
-## Repository structure (planned)
+```bash
+# 1. API server
+docker run --network host --ipc=host -it --rm \
+  -e ROS_DOMAIN_ID=0 -e RMW_IMPLEMENTATION=rmw_fastrtps_cpp \
+  -e FASTDDS_BUILTIN_TRANSPORTS=UDPv4 \
+  ghcr.io/open-rmf/rmf-web/api-server:jazzy-nightly
+
+# 2. Simulation, reporting to the API server
+ros2 launch rmf_demos_gz office.launch.xml headless:=1 server_uri:="ws://localhost:8000/_internal"
+
+# 3. Python client check
+source .venv/bin/activate
+python scripts/phase2_check.py --cancel-test
+```
+
+## Repository structure
 
 ```
-mcp_server/   MCP server and RMF API client
-agent/        LLM agent loop
-eval/         test commands and results
-docs/         setup notes and progress log
+mcp_server/
+  rmf_client.py     HTTP client for the rmf-web API (fleet state, dispatch, track, cancel)
+scripts/
+  phase2_check.py   end-to-end check of the API bridge
+docs/
+  setup.md          environment setup, verification steps and known issues
+agent/              LLM agent loop (Phase 4)
+eval/               test commands and results (Phase 6)
 ```
