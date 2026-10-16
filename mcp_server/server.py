@@ -5,7 +5,8 @@ Run from the repo root (stdio transport):
     python -m mcp_server.server
 
 Configuration (environment variables):
-    RMF_API_URL   rmf-web API server URL (default http://localhost:8000)
+    RMF_API_URL         rmf-web API server URL (default http://localhost:8000)
+    RMF_MCP_LOG_LEVEL   server log level on stderr (default INFO; the agent CLI sets WARNING)
 
 Never print() in this module: over stdio, stdout carries the MCP protocol.
 Logging goes to stderr.
@@ -35,7 +36,8 @@ from mcp_server.rmf_client import (
     summarize_task,
 )
 
-logging.basicConfig(stream=sys.stderr, level=logging.INFO, format="%(asctime)s %(levelname)s %(message)s")
+LOG_LEVEL = os.environ.get("RMF_MCP_LOG_LEVEL", "INFO").upper()
+logging.basicConfig(stream=sys.stderr, level=LOG_LEVEL, format="%(asctime)s %(levelname)s %(message)s")
 log = logging.getLogger("rmf-fleet-mcp")
 logging.getLogger("httpx").setLevel(logging.WARNING)  # don't log every HTTP request
 
@@ -59,7 +61,7 @@ Guidelines:
 - Never assume a task finished: check its status.
 """
 
-mcp = MCPServer("rmf-fleet", instructions=INSTRUCTIONS)
+mcp = MCPServer("rmf-fleet", instructions=INSTRUCTIONS, log_level=LOG_LEVEL)
 _client = RMFClient(API_URL)
 _index: LocationIndex | None = None
 

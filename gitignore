@@ -1,0 +1,23 @@
+# Python
+__pycache__/
+*.py[cod]
+.venv/
+venv/
+.env
+
+# ROS 2 / colcon build output
+build/
+install/
+log/
+
+# Logs and local results
+*.log
+*.jsonl
+
+# Editors and OS
+.vscode/
+.idea/
+.DS_Store
+
+# Agent session logs
+logs/

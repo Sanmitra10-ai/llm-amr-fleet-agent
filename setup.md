@@ -206,10 +206,66 @@ The client authenticates with a token signed by rmf-web's built-in demo secret. 
 | Task queued behind another task | Stayed `queued` until the earlier patrol finished, then completed |
 | Cancel a running 3-round patrol | `cancel_task` returned `success: True`; task ended `canceled` |
 
+## 8. Phase 3: MCP server
+
+```bash
+source .venv/bin/activate
+pip install -r requirements.txt   # adds the MCP SDK (v2)
+
+# With the API server and sim running:
+python scripts/phase3_check.py            # all tools + guardrails, waits for a delivery
+python scripts/phase3_check.py --no-wait  # skip waiting for the delivery
+```
+
+The check launches `python -m mcp_server.server` over stdio (as the agent does), lists the tools, calls each read-only tool, tests 4 guardrails, runs a pantry → hardware_2 delivery and cancels a patrol. Expected: `15/15 checks passed`.
+
+MCP SDK v2 renamed `FastMCP` to `MCPServer` (`from mcp.server.mcpserver import MCPServer`). Tutorials written for v1 won't import.
+
+Optional browser UI (needs Node.js 22.19+; Ubuntu ships 18):
+
+```bash
+curl -o- https://raw.githubusercontent.com/nvm-sh/nvm/v0.40.3/install.sh | bash
+source ~/.bashrc
+nvm install 22
+npx @modelcontextprotocol/inspector .venv/bin/python -m mcp_server.server
+```
+
+## 9. Phase 4: LLM agent
+
+Set one API key (add the line to `~/.bashrc` to keep it; never commit keys):
+
+```bash
+export GEMINI_API_KEY="..."      # Gemini free tier, model gemini-3.8-flash
+# or
+export ANTHROPIC_API_KEY="..."   # Claude, model claude-sonnet-5-5
+```
+
+Then, with the API server and sim running:
+
+```bash
+source .venv/bin/activate
+pip install -r requirements.txt                       # adds the anthropic and openai SDKs
+python -m agent.cli                                   # interactive chat
+python -m agent.cli -c "Send a robot to the pantry"   # one command, then exit
+python -m agent.cli --provider gemini --model gemini-3.8-flash
+```
+
+| Option | Meaning |
+|---|---|
+| `--provider` | `anthropic`, `gemini`, `openai` or `ollama` (default: whichever API key is set) |
+| `--model` | Override the preset model (also `LLM_MODEL`) |
+| `--yes` | Approve cancels and extra dispatches without asking (for unattended runs) |
+| `--poll` | Seconds between status checks while waiting for tasks |
+
+Each session writes `logs/session-<timestamp>.jsonl` with one event per line: `user`, `llm_call` (latency, tokens, tool calls), `tool_call` (name, args, result, error, approval, latency) and `final` (steps, tool calls, dispatches, total latency). Phase 6 computes metrics from these logs.
+
 ## Known issues and notes
 
 | Symptom | Cause and fix |
 |---|---|
+| pip warns `rmf-demos-fleet-adapter ... requires fastapi` | Harmless. ROS workspace packages are visible inside the venv via `PYTHONPATH`; the project doesn't use them. |
+| `python -m mcp_server.server` prints nothing and waits | Expected: it's waiting for an MCP client on stdin. Use the check script, the agent or Inspector. |
+| `Setup error: No LLM configured` | Export `GEMINI_API_KEY` or `ANTHROPIC_API_KEY` in that terminal. |
 | `permission denied ... /var/run/docker.sock` | User not in the `docker` group yet. Run `sudo usermod -aG docker $USER`, then log out and back in. |
 | `ensurepip is not available` when creating the venv | Install `python3.12-venv` with `sudo`, delete the broken `.venv`, recreate it. |
 | Robot table works but dispatch returns `500` ("rmf service timed out") | ROS 2 messages aren't crossing between the container and the host. Use `FASTDDS_BUILTIN_TRANSPORTS=UDPv4` on both sides (see above). |
