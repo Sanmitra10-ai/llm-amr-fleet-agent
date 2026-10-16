@@ -5,6 +5,8 @@ never needs ROS 2 itself. Everything here is plain HTTP + JSON.
 
 Endpoints used (all under the API server, default http://localhost:8000):
     GET  /fleets                    fleet and robot states
+    GET  /building_map              levels, nav graphs and named waypoints
+    GET  /tasks                     task states, optionally filtered by status
     GET  /tasks/{task_id}/state     state of one task
     POST /tasks/dispatch_task       submit a new task
     POST /tasks/cancel_task         cancel a task
@@ -28,10 +30,24 @@ DEMO_JWT_AUDIENCE = "rmf_api_server"
 DEMO_JWT_ISSUER = "stub"
 
 TERMINAL_STATUSES = {"completed", "failed", "canceled", "killed", "skipped"}
+ACTIVE_STATUSES = ["queued", "standby", "underway", "delayed", "blocked"]
 
 
 class RMFError(RuntimeError):
     """Raised when the API server rejects a request."""
+
+
+def summarize_task(state: dict) -> dict:
+    """Compact view of an RMF task state."""
+    assigned = state.get("assigned_to") or {}
+    return {
+        "task_id": (state.get("booking") or {}).get("id"),
+        "category": state.get("category"),
+        "status": state.get("status"),
+        "robot": assigned.get("name"),
+        "fleet": assigned.get("group"),
+        "detail": state.get("detail"),
+    }
 
 
 def make_demo_token(username: str = "admin") -> str:
@@ -90,8 +106,8 @@ class RMFClient:
             raise RMFError(f"API server error {resp.status_code}: {resp.text}")
         resp.raise_for_status()
 
-    def _get(self, path: str) -> Any:
-        resp = self._http.get(path)
+    def _get(self, path: str, params: dict | None = None) -> Any:
+        resp = self._http.get(path, params=params)
         self._check(resp)
         return resp.json()
 
@@ -127,7 +143,28 @@ class RMFClient:
                 )
         return robots
 
+    # -- building map ---------------------------------------------------------
+
+    def get_building_map(self) -> dict | None:
+        """Building map with levels, nav graphs and named waypoints.
+
+        Returns None if the API server hasn't received the map from RMF yet.
+        """
+        try:
+            return self._get("/building_map")
+        except httpx.HTTPStatusError as e:
+            if e.response.status_code == 404:
+                return None
+            raise
+
     # -- tasks ----------------------------------------------------------------
+
+    def list_tasks(self, statuses: list[str] | None = None, limit: int = 100) -> list[dict]:
+        """Task states known to the API server, optionally filtered by status."""
+        params: dict[str, Any] = {"limit": limit}
+        if statuses:
+            params["status"] = ",".join(statuses)
+        return self._get("/tasks", params=params)
 
     def dispatch_task(
         self,
@@ -188,18 +225,13 @@ class RMFClient:
             raise
 
     def get_task_summary(self, task_id: str) -> dict | None:
-        """Compact task view: status, assigned robot, category."""
+        """Compact task view: status, assigned robot, category, detail."""
         state = self.get_task_state(task_id)
         if state is None:
             return None
-        assigned = state.get("assigned_to") or {}
-        return {
-            "task_id": task_id,
-            "category": state.get("category"),
-            "status": state.get("status"),
-            "robot": assigned.get("name"),
-            "fleet": assigned.get("group"),
-        }
+        summary = summarize_task(state)
+        summary["task_id"] = summary["task_id"] or task_id
+        return summary
 
     def cancel_task(self, task_id: str) -> dict:
         return self._post(
